@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>body{margin:0}</style>
+<title>Москва на ходу</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-column phone app — status line, story card in focus, live map, big thumb buttons */
+:root{
+  --bg:#f3f1ee; --surface:#ffffff; --fg:#1f1d1c; --muted:#6b6560; --line:#ddd7d0;
+  --brick:#a8322a; --brick-ink:#ffffff; --brick-soft:#f4e3e0; --ok:#2f7a4d; --mapbg:#e9e5df;
+  --tilefilter:none;
+  --display:"Unbounded","Arial Black",system-ui,sans-serif;
+  --body:"Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#171615; --surface:#22201f; --fg:#f1ece6; --muted:#a39b93; --line:#37332f;
+  --brick:#e0574b; --brick-ink:#1a0a08; --brick-soft:#3a201d; --ok:#5fbf85; --mapbg:#2a2725;
+  --tilefilter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#171615; --surface:#22201f; --fg:#f1ece6; --muted:#a39b93; --line:#37332f;
+  --brick:#e0574b; --brick-ink:#1a0a08; --brick-soft:#3a201d; --ok:#5fbf85; --mapbg:#2a2725;
+  --tilefilter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9); color-scheme:dark}
+[hidden]{display:none!important}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:16px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 32px}
+.app{max-width:560px;margin:0 auto;display:grid;gap:18px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--display);font-weight:700;font-size:1.5rem;letter-spacing:-.01em;margin:0;text-wrap:balance}
+h1 span{color:var(--brick)}
+.chip{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:3px 10px}
+.lead{margin:0;color:var(--muted);max-width:60ch}
+.btn{font:600 1.05rem var(--body);border:0;border-radius:16px;padding:18px 20px;cursor:pointer;width:100%;color:var(--fg)}
+.btn:focus-visible{outline:3px solid var(--brick);outline-offset:3px}
+.primary{background:var(--brick);color:var(--brick-ink);font-family:var(--display);font-size:1.15rem;padding:24px}
+.ghost{background:transparent;border:1.5px solid var(--line)}
+.accent{background:var(--brick-soft);border:1.5px solid var(--brick)}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.safety{display:grid;gap:6px;border-left:3px solid var(--brick);padding:4px 0 4px 14px;font-size:.92rem;color:var(--muted)}
+.safety b{color:var(--fg)}
+.status{display:flex;gap:8px 14px;align-items:center;font-size:.92rem;color:var(--muted);flex-wrap:wrap}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--ok);flex:none;animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.3}}
+.num{font-variant-numeric:tabular-nums;color:var(--fg);font-weight:600}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px;display:grid;gap:10px;min-width:0}
+.eyebrow{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--brick);font-weight:600}
+.card h2{font-family:var(--display);font-weight:500;font-size:1.25rem;margin:0;text-wrap:balance}
+.card p{margin:0}
+.offer{background:var(--brick-soft);border-radius:10px;padding:10px 12px;font-size:.92rem}
+.longtext{border-top:1px solid var(--line);padding-top:10px}
+.empty{color:var(--muted)}
+.mapwrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+#map{height:320px;background:var(--mapbg)}
+.mapnote{font-size:.8rem;color:var(--muted);padding:8px 12px}
+.passed h3{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;font-weight:600}
+.passed ol{margin:0;padding-left:20px;display:grid;gap:2px}
+@media (prefers-reduced-motion:reduce){.dot{animation:none}}
+
+/* Минимальные стили карты Leaflet */
+.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-tile-container,.leaflet-pane>svg,.leaflet-pane>canvas,.leaflet-layer{position:absolute;left:0;top:0}
+.leaflet-container{overflow:hidden;font:inherit;-webkit-tap-highlight-color:transparent;outline-offset:1px}
+.leaflet-container.leaflet-touch-drag{touch-action:none}
+.leaflet-tile{user-select:none;visibility:hidden;filter:inherit}
+.leaflet-tile-loaded{visibility:inherit}
+.leaflet-container img.leaflet-tile{max-width:none!important;max-height:none!important;width:auto;padding:0}
+.leaflet-container .leaflet-overlay-pane svg{max-width:none!important;max-height:none!important}
+.leaflet-pane{z-index:400}.leaflet-tile-pane{z-index:200;filter:var(--tilefilter)}.leaflet-overlay-pane{z-index:400}
+.leaflet-marker-pane{z-index:600}.leaflet-tooltip-pane{z-index:650}.leaflet-popup-pane{z-index:700}
+.leaflet-map-pane svg{z-index:200}
+.leaflet-zoom-animated{transform-origin:0 0}
+.leaflet-zoom-anim .leaflet-zoom-animated{transition:transform .25s cubic-bezier(0,0,.25,1)}
+.leaflet-zoom-anim .leaflet-tile,.leaflet-pan-anim .leaflet-tile{transition:none}
+.leaflet-zoom-anim .leaflet-zoom-hide{visibility:hidden}
+.leaflet-interactive{cursor:pointer}.leaflet-grab{cursor:grab}.leaflet-dragging .leaflet-grab{cursor:grabbing}
+.leaflet-pane>svg path{pointer-events:none}.leaflet-pane>svg path.leaflet-interactive{pointer-events:auto}
+.leaflet-top,.leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}
+.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}
+.leaflet-control{position:relative;z-index:800;pointer-events:auto;float:left;clear:both}
+.leaflet-right .leaflet-control{float:right}
+.leaflet-top .leaflet-control{margin-top:10px}.leaflet-bottom .leaflet-control{margin-bottom:0}
+.leaflet-left .leaflet-control{margin-left:10px}.leaflet-right .leaflet-control{margin-right:0}
+.leaflet-bar{border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.leaflet-bar a{display:block;width:34px;height:34px;line-height:34px;text-align:center;text-decoration:none;background:var(--surface);color:var(--fg);font:600 18px var(--body)}
+.leaflet-bar a+a{border-top:1px solid var(--line)}
+.leaflet-control-attribution{background:var(--surface);opacity:.85;padding:0 6px;font-size:10px;color:var(--muted)}
+.leaflet-control-attribution a{color:var(--muted)}
+.leaflet-tooltip{position:absolute;padding:3px 8px;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:6px;white-space:nowrap;pointer-events:none;font-size:12px}
+</style>
+
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Москва <span>на ходу</span></h1>
+    <span class="chip" id="modeChip">прототип v0.2.1</span>
+  </header>
+
+  <!-- Стартовый экран -->
+  <section id="start" class="app" style="gap:14px">
+    <p class="lead">Аудиогид для поездок по Москве на самокате или мотоцикле. На ходу гид коротко называет место, мимо которого вы едете. Остановитесь, и он расскажет подробнее.</p>
+    <div class="safety">
+      <span><b>Не смотрите в экран за рулём.</b> Всё рассказывается голосом.</span>
+      <span>Подробная история начинается, только когда вы остановились.</span>
+    </div>
+    <button class="btn primary" id="btnStart">Начать поездку</button>
+    <div class="row">
+      <button class="btn ghost" id="btnDemoLefort">Демо: Лефортовский парк</button>
+      <button class="btn ghost" id="btnDemoCenter">Демо: центр</button>
+    </div>
+    <p class="lead" id="startNote" style="font-size:.9rem"></p>
+  </section>
+
+  <!-- Экран поездки -->
+  <section id="ride" class="app" hidden style="gap:14px">
+    <div class="status">
+      <span class="dot"></span>
+      <span id="statusText">Ищу ваше местоположение…</span>
+      <span>Скорость <span class="num" id="speed">—</span></span>
+    </div>
+
+    <article class="card">
+      <span class="eyebrow" id="storyEyebrow">Ждём первое место</span>
+      <h2 id="storyTitle">Поехали</h2>
+      <p id="storyShort" class="empty">Когда впереди окажется интересное место, гид коротко о нём расскажет.</p>
+      <p class="offer" id="storyOffer" hidden>Есть история подробнее. Остановитесь, когда будет безопасно, и гид продолжит.</p>
+      <p class="longtext" id="storyLong" hidden></p>
+    </article>
+
+    <div class="row">
+      <button class="btn accent" id="btnMore" disabled>Рассказать подробнее</button>
+      <button class="btn ghost" id="btnRepeat">Повторить</button>
+    </div>
+
+    <div class="mapwrap">
+      <div id="map" role="region" aria-label="Карта поездки"></div>
+      <div class="mapnote" id="mapNote">Зелёная точка — вы. Красные — места с историями, закрашенные уже рассказаны.</div>
+    </div>
+
+    <div class="passed"><h3>Уже рассказано</h3><ol id="passedList"><li class="empty">Пока ничего</li></ol></div>
+
+    <div class="row">
+      <button class="btn ghost" id="btnMute">Без звука</button>
+      <button class="btn ghost" id="btnStop">Закончить</button>
+    </div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ---------- 1. База мест: короткая история (на ходу) и длинная (при остановке) ----------
+const PLACES = [
+  // Лефортово. Дворцы и грот — точные координаты (Википедия, Викисклад), ротонда приблизительно
+  {id:"lefortpal", area:"lefort", name:"Лефортовский дворец", lat:55.76788, lon:37.68562,
+   short:"Лефортовский дворец. Его построили в конце семнадцатого века для Франца Лефорта, друга и соратника молодого Петра Первого.",
+   long:"Лефорт успел пожить в новом дворце всего несколько дней: он умер в 1699 году, вскоре после новоселья. В том же году Пётр назвал слободу на левом берегу Яузы Лефортовской. Так имя швейцарца из Женевы осталось в названии целого района Москвы."},
+  {id:"ekat", area:"lefort", name:"Екатерининский дворец", lat:55.76105, lon:37.69625,
+   short:"Екатерининский дворец с лоджией из шестнадцати коринфских колонн. Его строили с 1773 по 1796 год.",
+   long:"Дворец стоит на фундаменте старого Анненгофа. Над ним работали архитекторы Пётр Макулов, Антонио Ринальди и Джакомо Кваренги. Пожить здесь Екатерина так и не успела, а Павел Первый отдал здание военным под казармы. С 1824 года дворец занимали кадетские корпуса, и сегодня он по-прежнему принадлежит Министерству обороны, поэтому внутрь попасть сложно."},
+  {id:"lefpark", area:"lefort", name:"Лефортовский парк", lat:55.7650, lon:37.69083, radius:120,
+   short:"Вы в Лефортовском парке, одном из старейших регулярных парков России. Москвичи прозвали его Версалем на Яузе.",
+   long:"Сад начали разбивать в 1703 году для Фёдора Головина, сподвижника Петра, поэтому сначала его называли Головинским. В 1722 году усадьбу купил сам Пётр, и архитектор Николай Бидлоо перестроил парк в голландском духе: каскадные пруды, фонтаны, аллеи, скульптуры и беседка на острове. Этот парк вдохновлял создателей загородных резиденций под Петербургом. После того как Павел Первый отдал усадьбу военным, парк пришёл в упадок, а в 1904 году его сильно повредил ураган."},
+  {id:"rotunda", area:"lefort", name:"Ротонда с бюстом Петра I", lat:55.7647, lon:37.6893,
+   short:"Беседка-ротонда у Крестового пруда с бюстом Петра Первого. Пётр купил эту усадьбу в 1722 году.",
+   long:"Крестовый пруд — часть системы прудов, которую создали при перестройке парка Николаем Бидлоо. Ротонду с бюстом Петра восстановили в 1910 году. Вглядитесь в планировку парка: прямые аллеи и пруды правильной формы — это и есть регулярный голландский сад петровского времени."},
+  {id:"grotto", area:"lefort", name:"Грот Растрелли", lat:55.76428, lon:37.68864,
+   short:"Барочный грот у Крестового пруда — единственное, что уцелело в парке от эпохи Анны Иоанновны и Растрелли.",
+   long:"При императрице Анне Иоанновне здесь строил Франческо Растрелли. Он возвёл деревянный летний дворец Анненгоф и перевёз сюда из Кремля зимний Анненгоф. Сад разделили на Нижний и Верхний и украсили скульптурами работы отца архитектора, Бартоломео Растрелли. Деревянные дворцы не сохранились, и грот остался последним свидетелем той роскоши."},
+
+  // Центр
+  {id:"patr", area:"center", name:"Патриаршие пруды", lat:55.7636, lon:37.5925,
+   short:"Патриаршие пруды. Здесь, на скамейке у пруда, начинается роман Булгакова «Мастер и Маргарита».",
+   long:"В семнадцатом веке здесь была Патриаршая слобода, и прудов было три: в них разводили рыбу к патриаршему столу. До наших дней сохранился один."},
+  {id:"push", area:"center", name:"Пушкинская площадь", lat:55.7655, lon:37.6057,
+   short:"Пушкинская площадь. Памятник поэту открыли в 1880 году, на торжествах выступали Достоевский и Тургенев.",
+   long:"Памятник создал скульптор Опекушин. Сначала он стоял на другой стороне площади, в начале Тверского бульвара. В 1950 году бронзового Пушкина перенесли на нынешнее место, и теперь он смотрит на бульвар, где простоял семьдесят лет."},
+  {id:"elis", area:"center", name:"Елисеевский магазин", lat:55.7645, lon:37.6062,
+   short:"Елисеевский магазин. Гастроном с роскошными интерьерами купец Григорий Елисеев открыл здесь в 1901 году.",
+   long:"До магазина здесь был особняк, где собирался литературный салон Зинаиды Волконской, и бывал Пушкин. Москвичи до сих пор называют гастроном просто Елисеевским."},
+  {id:"nirn", area:"center", name:"Дом Нирнзее", lat:55.7623, lon:37.6055,
+   short:"В переулке справа дом Нирнзее, первый московский небоскрёб. В 1913 году его десять этажей казались невероятной высотой.",
+   long:"Это был дом небольших квартир для одиноких горожан. На плоской крыше работали кинотеатр и смотровая площадка с видом на Кремль."},
+  {id:"mer", area:"center", name:"Здание мэрии на Тверской", lat:55.7613, lon:37.6095,
+   short:"Красное здание с колоннами — дом генерал-губернатора 1782 года. В 1930-х его целиком передвинули вглубь квартала.",
+   long:"Проект Матвея Казакова. Когда расширяли Тверскую, здание не стали сносить, а передвинули почти на четырнадцать метров. Позже надстроили ещё два этажа. Сегодня здесь работает мэрия Москвы."},
+  {id:"bolsh", area:"center", name:"Большой театр", lat:55.7601, lon:37.6186,
+   short:"Большой театр. Над портиком мчится квадрига Аполлона работы скульптора Петра Клодта.",
+   long:"Труппа ведёт историю с 1776 года, а здание не раз горело. Нынешний облик театр получил после пожара 1853 года: его восстановил архитектор Альберт Кавос."},
+  {id:"gum", area:"center", name:"ГУМ", lat:55.7547, lon:37.6216,
+   short:"ГУМ, бывшие Верхние торговые ряды 1893 года. Стеклянные своды над линиями рассчитал инженер Шухов.",
+   long:"Архитектор Александр Померанцев. Владимир Шухов — тот самый инженер, что построил Шуховскую башню. Под сводами могли разместиться больше тысячи магазинов."},
+  {id:"vasil", area:"center", name:"Храм Василия Блаженного", lat:55.7525, lon:37.6231,
+   short:"Храм Василия Блаженного, построенный при Иване Грозном в честь взятия Казани.",
+   long:"Его строили в 1555–1561 годах. На деле это не один храм, а девять церквей на общем основании, каждая со своим куполом."},
+  {id:"manezh", area:"center", name:"Манеж", lat:55.7535, lon:37.6125,
+   short:"Манеж, построенный в 1817 году к пятилетию победы над Наполеоном.",
+   long:"Здесь могли маршировать войска. Пролёт около сорока пяти метров без единой внутренней опоры по тем временам был рекордом."},
+  {id:"mgu", area:"center", name:"Старое здание МГУ", lat:55.7560, lon:37.6117,
+   short:"Здание с куполом — старый корпус Московского университета. Здесь учились Лермонтов, Тургенев и Чехов.",
+   long:"Его построили по проекту Матвея Казакова в конце восемнадцатого века. В пожаре 1812 года здание сгорело, и Доменико Жилярди восстановил его в стиле ампир."},
+  {id:"pash", area:"center", name:"Дом Пашкова", lat:55.7495, lon:37.6086,
+   short:"На холме белый дом Пашкова. С его крыши у Булгакова Воланд прощается с Москвой.",
+   long:"Дом построен в 1780-х годах. Автором считают Василия Баженова, хотя документов не сохранилось. Сейчас здание принадлежит Российской государственной библиотеке."},
+  {id:"hram", area:"center", name:"Храм Христа Спасителя", lat:55.7446, lon:37.6055,
+   short:"Храм Христа Спасителя. Его взорвали в 1931 году и воссоздали в 1990-х.",
+   long:"Храм строили больше сорока лет в память о победе над Наполеоном. На его месте собирались возвести Дворец Советов, но так и не построили, и много лет здесь работал открытый бассейн «Москва»."},
+  {id:"arbat", area:"center", name:"Музей-квартира Пушкина", lat:55.7467, lon:37.5865,
+   short:"Арбат, дом 53. Сюда Пушкин привёз Наталью Гончарову сразу после венчания в 1831 году.",
+   long:"Счастливая московская жизнь продлилась недолго: всего через три месяца пара переехала в Петербург. Сейчас здесь музей-квартира поэта."}
+];
+const ROUTES = {
+  lefort:{name:"Лефортовский парк", ids:["lefortpal","grotto","rotunda","lefpark","ekat"], start:{lat:55.7690, lon:37.6820}},
+  center:{name:"центр", ids:["patr","push","elis","nirn","mer","bolsh","gum","vasil","manezh","mgu","pash","hram","arbat"], start:{lat:55.7636, lon:37.5895}}
+};
+
+// ---------- 2. Настройки гида ----------
+const NEAR_M = 45;          // ближе этого рассказываем в любом случае
+const AHEAD_DEG = 60;       // «впереди» = в пределах ±60° от направления движения
+const LEAD_S = 8;           // начинаем рассказ за ~8 секунд до места
+const STOP_SPEED = 1.2;     // м/с: медленнее — считаем, что человек остановился
+const STOP_HOLD_S = 3;      // сколько секунд нужно стоять, чтобы начать длинную историю
+const OFFER_S = 25;         // сколько секунд ждём остановки после короткой истории
+const PAUSE_S = 5;          // тишина между историями
+
+// ---------- 3. География ----------
+const $ = id => document.getElementById(id);
+const rad = d => d*Math.PI/180;
+function distanceM(a,b){ const R=6371000, dLat=rad(b.lat-a.lat), dLon=rad(b.lon-a.lon);
+  const h=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+function bearing(a,b){ const y=Math.sin(rad(b.lon-a.lon))*Math.cos(rad(b.lat));
+  const x=Math.cos(rad(a.lat))*Math.sin(rad(b.lat))-Math.sin(rad(a.lat))*Math.cos(rad(b.lat))*Math.cos(rad(b.lon-a.lon));
+  return (Math.atan2(y,x)*180/Math.PI+360)%360; }
+const angleDiff = (a,b) => Math.abs(((a-b+540)%360)-180);
+
+// ---------- 4. Голос ----------
+const voiceOK = "speechSynthesis" in window;
+let muted = false, speaking = false;
+function speak(text, onDone){
+  speaking = true; let finished = false;
+  const done = () => { if(finished) return; finished = true; speaking = false; lastSpokeAt = Date.now(); onDone && onDone(); };
+  setTimeout(done, text.length*90 + 4000); // страховка: на некоторых телефонах голос «молча» не завершается
+  if(!voiceOK || muted){ setTimeout(done, Math.max(2500, text.length*55)); return; }
+  speechSynthesis.cancel();
+  const parts = text.match(/[^.!?]+[.!?]+/g) || [text];
+  const voice = speechSynthesis.getVoices().find(v => (v.lang||"").toLowerCase().startsWith("ru"));
+  parts.forEach((p,i) => { const u = new SpeechSynthesisUtterance(p.trim()); u.lang="ru-RU"; if(voice) u.voice=voice;
+    if(i===parts.length-1){ u.onend=done; u.onerror=done; } speechSynthesis.speak(u); });
+}
+
+// ---------- 5. Состояние поездки ----------
+let mode=null, pos=null, prev=null, speed=null, heading=null, lastSpokeAt=0, stoppedSince=null;
+let current=null;          // место, о котором сейчас рассказ
+let offer=null;            // {place, until} — ждём остановки ради длинной истории
+const toldShort=new Set(), toldLong=new Set(), wikiPlaces=[];
+const allPlaces = () => PLACES.concat(wikiPlaces);
+
+let lastFixAt = 0;
+// Раз в секунду пересматриваем ситуацию: стоящий телефон может не присылать новые координаты
+setInterval(() => {
+  if(mode!=="real" || !pos) return; const now = Date.now();
+  if(now-lastFixAt > 4000){ speed = 0; stoppedSince = stoppedSince || now; $("speed").textContent = "0 км/ч"; }
+  decide(now);
+}, 1000);
+function onPosition(p, gpsSpeed, gpsHeading){
+  const now = Date.now(); lastFixAt = now;
+  // скорость и направление: берём из GPS, а если их нет — считаем по двум последним точкам
+  if(prev){ const d = distanceM(prev, p), dt = (now-prev.t)/1000;
+    if(dt>0) speed = (gpsSpeed!=null && gpsSpeed>=0) ? gpsSpeed : d/dt;
+    if(gpsHeading!=null && !isNaN(gpsHeading) && speed>STOP_SPEED) heading = gpsHeading;
+    else if(d>4) heading = bearing(prev, p); }
+  prev = {...p, t:now}; pos = p;
+  stoppedSince = (speed!=null && speed<STOP_SPEED) ? (stoppedSince||now) : null;
+  $("speed").textContent = speed==null ? "—" : `${Math.round(speed*3.6)} км/ч`;
+  updateMap();
+  decide(now);
+}
+
+function decide(now){
+  if(speaking) return;
+  // 1) ждём остановки после короткой истории
+  if(offer){
+    if(stoppedSince && now-stoppedSince >= STOP_HOLD_S*1000){ tellLong(offer.place); return; }
+    if(now > offer.until){ offer=null; $("storyOffer").hidden=true; }
+    else return; // пока предложение в силе, не перебиваем новым местом
+  }
+  if(now-lastSpokeAt < PAUSE_S*1000) return;
+  // 2) ищем место впереди
+  const lead = Math.min(160, Math.max(60, 40 + (speed||0)*LEAD_S));
+  let best=null;
+  for(const pl of allPlaces()){
+    if(toldShort.has(pl.id)) continue;
+    const d = distanceM(pos, pl), near = pl.radius || NEAR_M;
+    const ahead = heading!=null && d<=lead && angleDiff(bearing(pos,pl), heading)<=AHEAD_DEG;
+    if((d<=near || ahead) && (!best || d<best.d)) best={pl,d};
+  }
+  if(best){ tellShort(best.pl); return; }
+  const next = allPlaces().filter(pl=>!toldShort.has(pl.id)).map(pl=>({pl,d:distanceM(pos,pl)})).sort((a,b)=>a.d-b.d)[0];
+  $("statusText").textContent = next ? `Едем. До «${next.pl.name}» ${fmtDist(next.d)}` : "Едем. Новых мест рядом нет";
+  if(mode==="real") maybeAskWikipedia(pos);
+}
+const fmtDist = d => d<1000 ? `${Math.round(d/10)*10} м` : `${(d/1000).toFixed(1)} км`;
+
+function tellShort(pl){
+  toldShort.add(pl.id); current=pl;
+  $("storyEyebrow").textContent = pl.source==="wiki" ? "Из Википедии · рядом" : "Вы проезжаете";
+  $("storyTitle").textContent = pl.name;
+  $("storyShort").textContent = pl.short; $("storyShort").classList.remove("empty");
+  $("storyLong").hidden = true; $("storyOffer").hidden = true;
+  $("btnMore").disabled = !pl.long;
+  $("statusText").textContent = "Рассказываю";
+  updatePassed(); updateMap();
+  speak(pl.short + (pl.long ? " Если хотите подробнее, остановитесь, когда будет безопасно." : ""), () => {
+    if(pl.long && !toldLong.has(pl.id)){
+      offer = {place:pl, until:Date.now()+OFFER_S*1000}; $("storyOffer").hidden=false;
+      if(mode==="demo") demoStopFor(pl);
+    }
+    demoTick();
+  });
+}
+function tellLong(pl){
+  offer=null; toldLong.add(pl.id); current=pl;
+  $("storyOffer").hidden = true;
+  $("storyLong").textContent = pl.long; $("storyLong").hidden = false;
+  $("storyEyebrow").textContent = "Подробная история"; $("statusText").textContent = "Рассказываю подробно";
+  speak(pl.long, () => { $("storyEyebrow").textContent = "Можно ехать дальше"; $("statusText").textContent = "Можно ехать дальше"; if(mode==="demo") demo.stopUntil=0; demoTick(); });
+}
+function updatePassed(){
+  const list = allPlaces().filter(p=>toldShort.has(p.id)); const ol=$("passedList"); ol.innerHTML="";
+  list.forEach(p=>{ const li=document.createElement("li"); li.textContent=p.name; ol.appendChild(li); });
+}
+
+// ---------- 6. Википедия (работает после публикации в интернете) ----------
+let lastWikiAsk=null;
+async function maybeAskWikipedia(p){
+  if(lastWikiAsk && distanceM(lastWikiAsk,p)<150) return; lastWikiAsk=p;
+  try{
+    const g = await fetch(`https://ru.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${p.lat}|${p.lon}&gsradius=200&gslimit=4&format=json&origin=*`).then(r=>r.json());
+    const ids=(g.query?.geosearch||[]).map(x=>x.pageid).filter(id=>!allPlaces().some(pl=>pl.id==="w"+id));
+    if(!ids.length) return;
+    const ex = await fetch(`https://ru.wikipedia.org/w/api.php?action=query&prop=extracts|coordinates&exintro=1&explaintext=1&exsentences=5&pageids=${ids.join("|")}&format=json&origin=*`).then(r=>r.json());
+    Object.values(ex.query.pages).forEach(pg=>{
+      if(!pg.extract||!pg.coordinates) return;
+      const s = pg.extract.match(/[^.!?]+[.!?]+/g)||[pg.extract];
+      wikiPlaces.push({id:"w"+pg.pageid, source:"wiki", name:pg.title, lat:pg.coordinates[0].lat, lon:pg.coordinates[0].lon,
+        short:s.slice(0,2).join(" ").trim(), long:s.length>2 ? s.slice(2).join(" ").trim() : null});
+    });
+    updateMap();
+  }catch(e){ /* Википедия недоступна — работаем со встроенной базой */ }
+}
+
+// ---------- 7. Карта ----------
+let map=null, layers={}, userMarker=null, routeLine=null, tileErrors=0, userDraggedAt=0;
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function initMap(area){
+  if(!window.L){ $("map").hidden=true; $("mapNote").textContent="Карта не загрузилась. Гид работает и без неё."; return; }
+  if(map){ map.remove(); map=null; layers={}; userMarker=null; routeLine=null; }
+  map = L.map("map", {zoomControl:true, attributionControl:true});
+  const tiles = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {maxZoom:19, attribution:'© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'}).addTo(map);
+  tiles.on("tileerror", () => { if(++tileErrors===3) $("mapNote").textContent =
+    "Здесь подложка карты не грузится: страница открыта в защищённом окне. Улицы появятся, когда приложение будет на своём сайте. Точки и ваше движение видны уже сейчас."; });
+  map.on("dragstart", () => userDraggedAt = Date.now());
+  const pts = area ? PLACES.filter(p=>p.area===area) : PLACES;
+  map.fitBounds(L.latLngBounds(pts.map(p=>[p.lat,p.lon])).pad(area==="lefort"?0.35:0.1));
+  if(mode==="demo"){ const r=ROUTES[area]; routeLine = L.polyline([[r.start.lat,r.start.lon]].concat(r.ids.map(id=>{const p=PLACES.find(x=>x.id===id);return [p.lat,p.lon];})),
+    {color:css("--muted"), weight:3, dashArray:"6 8", opacity:.7}).addTo(map); }
+  updateMap();
+}
+function updateMap(){
+  if(!map) return;
+  allPlaces().forEach(p=>{
+    const done = toldShort.has(p.id);
+    const style = {radius: p===current?10:7, color:css("--brick"), weight:2, fillColor: done?css("--brick"):css("--surface"), fillOpacity:1};
+    if(!layers[p.id]) layers[p.id] = L.circleMarker([p.lat,p.lon], style).bindTooltip(p.name).addTo(map);
+    else layers[p.id].setStyle(style).setRadius(style.radius);
+  });
+  if(pos){
+    const ll=[pos.lat,pos.lon];
+    if(!userMarker) userMarker = L.circleMarker(ll,{radius:8,color:css("--surface"),weight:3,fillColor:css("--ok"),fillOpacity:1}).addTo(map);
+    else userMarker.setLatLng(ll);
+    if(mode==="real" && Date.now()-userDraggedAt>15000) map.panTo(ll, {animate:true});
+  }
+}
+
+// ---------- 8. Режимы ----------
+let watchId=null, wakeLock=null;
+async function keepScreenOn(){ try{ wakeLock = await navigator.wakeLock?.request("screen"); }catch(e){} }
+function resetRide(){
+  toldShort.clear(); toldLong.clear(); offer=null; current=null; pos=null; prev=null; speed=null; heading=null; stoppedSince=null; lastSpokeAt=0;
+  $("storyEyebrow").textContent="Ждём первое место"; $("storyTitle").textContent="Поехали";
+  $("storyShort").textContent="Когда впереди окажется интересное место, гид коротко о нём расскажет."; $("storyShort").classList.add("empty");
+  $("storyLong").hidden=true; $("storyOffer").hidden=true; $("btnMore").disabled=true; $("speed").textContent="—"; updatePassed();
+  $("passedList").innerHTML='<li class="empty">Пока ничего</li>';
+}
+function openRide(m, area){
+  mode=m; resetRide(); $("start").hidden=true; $("ride").hidden=false;
+  $("modeChip").textContent = m==="demo" ? `демо · ${ROUTES[area].name}` : "GPS";
+  keepScreenOn(); initMap(area);
+}
+function startReal(){
+  if(!navigator.geolocation){ $("startNote").textContent="Этот браузер не умеет определять местоположение. Попробуйте демо."; return; }
+  openRide("real", null);
+  speak("Вставайте на самокат, и поехали. Я расскажу о местах, мимо которых вы проезжаете.");
+  watchId = navigator.geolocation.watchPosition(
+    g => onPosition({lat:g.coords.latitude, lon:g.coords.longitude}, g.coords.speed, g.coords.heading),
+    () => { stopRide(); $("startNote").textContent="Не получилось узнать местоположение: в этом окне браузер не даёт доступ к GPS. Включите демо, а настоящий GPS заработает, когда приложение будет на своём сайте."; },
+    {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+}
+
+// Демо: виртуальный самокатчик едет по маршруту ~18 км/ч (ускорено в 4 раза)
+const DEMO_STEP_S = 1, DEMO_SPEED = 5, DEMO_X = 4;
+let demo = {path:[], seg:0, t:0, timer:null, stopUntil:0};
+function startDemo(area){
+  openRide("demo", area);
+  const r = ROUTES[area];
+  demo = {path:[r.start].concat(r.ids.map(id=>PLACES.find(p=>p.id===id))), seg:0, t:0, timer:null, stopUntil:0};
+  speak(`Демо-поездка: ${r.name}. Вставайте на самокат, и поехали.`, demoTick);
+  demo.timer = setInterval(demoTick, DEMO_STEP_S*1000);
+}
+function demoStopFor(pl){ demo.stopUntil = Date.now() + 60000; } // в демо всегда останавливаемся послушать
+function demoTick(){
+  if(mode!=="demo") return;
+  const now = Date.now();
+  if(speaking || demo.stopUntil>now){ // стоим: скорость 0, гид может начать длинную историю
+    if(pos) onPosition(pos, 0, null); return; }
+  const a=demo.path[demo.seg], b=demo.path[demo.seg+1];
+  if(!b){ clearInterval(demo.timer); demo.timer=null; $("statusText").textContent="Демо-поездка окончена";
+    speak("Поездка окончена. Спасибо, что катались с нами."); return; }
+  demo.t += DEMO_SPEED*DEMO_X*DEMO_STEP_S / Math.max(1, distanceM(a,b));
+  if(demo.t>=1){ demo.seg++; demo.t=0; }
+  const A=demo.path[demo.seg], B=demo.path[demo.seg+1]||A;
+  onPosition({lat:A.lat+(B.lat-A.lat)*demo.t, lon:A.lon+(B.lon-A.lon)*demo.t}, DEMO_SPEED, B!==A ? bearing(A,B) : null);
+}
+function stopRide(){
+  if(watchId!==null) navigator.geolocation.clearWatch(watchId); watchId=null;
+  clearInterval(demo.timer); demo.timer=null;
+  if(voiceOK) speechSynthesis.cancel(); speaking=false; mode=null;
+  try{ wakeLock && wakeLock.release(); }catch(e){}
+  $("ride").hidden=true; $("start").hidden=false; $("modeChip").textContent="прототип v0.2.1";
+}
+
+// ---------- 9. Кнопки ----------
+$("btnStart").onclick = startReal;
+$("btnDemoLefort").onclick = () => startDemo("lefort");
+$("btnDemoCenter").onclick = () => startDemo("center");
+$("btnStop").onclick = stopRide;
+$("btnMore").onclick = () => { if(current && current.long && !speaking) tellLong(current); };
+$("btnRepeat").onclick = () => { if(current && !speaking) speak(toldLong.has(current.id) ? current.short+" "+current.long : current.short); };
+$("btnMute").onclick = () => { muted=!muted; $("btnMute").textContent = muted?"Со звуком":"Без звука"; if(muted&&voiceOK) speechSynthesis.cancel(); };
+if(!voiceOK) $("startNote").textContent="Этот браузер не умеет читать вслух, истории будут только текстом.";
+</script>
+
+</body>
+</html>
