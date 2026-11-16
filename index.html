@@ -55,6 +55,16 @@ h1 span{color:var(--brick)}
 .mapwrap{background:var(--surface);border:1px solid var(--line);border-radius:18px;overflow:hidden}
 #map{height:320px;background:var(--mapbg)}
 .mapnote{font-size:.8rem;color:var(--muted);padding:8px 12px}
+.voice{display:grid;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
+.voice label{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;display:grid;gap:6px}
+.voice select,.voice input{font:500 1rem var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;width:100%}
+.voice input[type=range]{padding:0;accent-color:var(--brick)}
+.voice .hint{font-size:.85rem;color:var(--muted);margin:0}
+.voice .btn{padding:12px}
+#dark{position:fixed;inset:0;z-index:5000;background:#000;color:#5a5551;display:grid;place-items:center;text-align:center;cursor:pointer;
+  padding:env(safe-area-inset-top,0px) max(16px,env(safe-area-inset-right,0px)) env(safe-area-inset-bottom,0px) max(16px,env(safe-area-inset-left,0px))}
+#dark .darkinner{display:grid;gap:8px;font-size:.9rem}
+#dark .darktitle{font-family:var(--display);font-size:1.1rem;color:#8a837d}
 .passed h3{font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px;font-weight:600}
 .passed ol{margin:0;padding-left:20px;display:grid;gap:2px}
 @media (prefers-reduced-motion:reduce){.dot{animation:none}}
@@ -95,7 +105,7 @@ h1 span{color:var(--brick)}
 <div class="app">
   <header>
     <h1>Москва <span>на ходу</span></h1>
-    <span class="chip" id="modeChip">прототип v0.2.1</span>
+    <span class="chip" id="modeChip">прототип v0.3</span>
   </header>
 
   <!-- Стартовый экран -->
@@ -104,6 +114,13 @@ h1 span{color:var(--brick)}
     <div class="safety">
       <span><b>Не смотрите в экран за рулём.</b> Всё рассказывается голосом.</span>
       <span>Подробная история начинается, только когда вы остановились.</span>
+      <span><b>Не выключайте экран кнопкой</b>, иначе телефон усыпит гида. Для экономии батареи включите в поездке «Тёмный экран».</span>
+    </div>
+    <div class="voice" id="voiceBox">
+      <label for="voiceSel">Голос гида<select id="voiceSel"></select></label>
+      <label for="rateSel">Скорость речи: <span id="rateVal">1.0</span><input type="range" id="rateSel" min="0.8" max="1.2" step="0.05" value="1"></label>
+      <button class="btn ghost" id="btnTest">Прослушать</button>
+      <p class="hint" id="voiceHint">Голос звучит по-компьютерному? На iPhone скачайте бесплатно улучшенный голос: Настройки → Универсальный доступ → Устно → Голоса → Русский → Milena (улучшенный). Затем перезагрузите эту страницу.</p>
     </div>
     <button class="btn primary" id="btnStart">Начать поездку</button>
     <div class="row">
@@ -142,10 +159,19 @@ h1 span{color:var(--brick)}
     <div class="passed"><h3>Уже рассказано</h3><ol id="passedList"><li class="empty">Пока ничего</li></ol></div>
 
     <div class="row">
+      <button class="btn ghost" id="btnDark">Тёмный экран</button>
       <button class="btn ghost" id="btnMute">Без звука</button>
-      <button class="btn ghost" id="btnStop">Закончить</button>
     </div>
+    <button class="btn ghost" id="btnStop">Закончить поездку</button>
   </section>
+</div>
+
+<!-- Тёмный экран: страница продолжает работать, а экран почти не светится -->
+<div id="dark" hidden role="button" tabindex="0" aria-label="Вернуться к гиду">
+  <div class="darkinner">
+    <span class="darktitle" id="darkTitle">Гид работает</span>
+    <span>Коснитесь экрана, чтобы вернуться</span>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -218,7 +244,8 @@ const ROUTES = {
 // ---------- 2. Настройки гида ----------
 const NEAR_M = 45;          // ближе этого рассказываем в любом случае
 const AHEAD_DEG = 60;       // «впереди» = в пределах ±60° от направления движения
-const LEAD_S = 8;           // начинаем рассказ за ~8 секунд до места
+const LEAD_S = 12;          // начинаем рассказ за ~12 секунд до места (после теста: 8 с было мало)
+const PREDICT_S = 2;        // GPS отстаёт: считаем, где человек будет через 2 секунды
 const STOP_SPEED = 1.2;     // м/с: медленнее — считаем, что человек остановился
 const STOP_HOLD_S = 3;      // сколько секунд нужно стоять, чтобы начать длинную историю
 const OFFER_S = 25;         // сколько секунд ждём остановки после короткой истории
@@ -244,10 +271,37 @@ function speak(text, onDone){
   if(!voiceOK || muted){ setTimeout(done, Math.max(2500, text.length*55)); return; }
   speechSynthesis.cancel();
   const parts = text.match(/[^.!?]+[.!?]+/g) || [text];
-  const voice = speechSynthesis.getVoices().find(v => (v.lang||"").toLowerCase().startsWith("ru"));
-  parts.forEach((p,i) => { const u = new SpeechSynthesisUtterance(p.trim()); u.lang="ru-RU"; if(voice) u.voice=voice;
+  const voice = chosenVoice();
+  parts.forEach((p,i) => { const u = new SpeechSynthesisUtterance(p.trim()); u.lang="ru-RU"; u.rate=rate; if(voice) u.voice=voice;
     if(i===parts.length-1){ u.onend=done; u.onerror=done; } speechSynthesis.speak(u); });
 }
+
+// Выбор голоса: ищем лучший русский голос на устройстве и запоминаем выбор
+let rate = 1, voiceName = null;
+try{ rate = parseFloat(localStorage.getItem("rate")) || 1; voiceName = localStorage.getItem("voice"); }catch(e){}
+const ruVoices = () => voiceOK ? speechSynthesis.getVoices().filter(v => (v.lang||"").toLowerCase().startsWith("ru")) : [];
+function voiceScore(v){ // чем выше, тем естественнее обычно звучит голос
+  const n = v.name.toLowerCase(); let sc = 0;
+  if(/premium|премиум/.test(n)) sc += 50;
+  if(/enhanced|улучш/.test(n)) sc += 40;
+  if(/neural|natural|online/.test(n)) sc += 35;
+  if(/google/.test(n)) sc += 25;
+  if(/milena|милена|katya|катя|yuri|юрий|dariya|svetlana/.test(n)) sc += 10;
+  if(v.localService === false) sc += 5;
+  return sc;
+}
+function chosenVoice(){
+  const list = ruVoices(); if(!list.length) return null;
+  return list.find(v => v.name === voiceName) || list.slice().sort((a,b)=>voiceScore(b)-voiceScore(a))[0];
+}
+function fillVoices(){
+  const list = ruVoices().sort((a,b)=>voiceScore(b)-voiceScore(a)), sel = $("voiceSel");
+  if(!list.length){ sel.innerHTML = "<option>Русских голосов не найдено</option>"; sel.disabled = true; return; }
+  const best = chosenVoice(); sel.disabled = false; sel.innerHTML = "";
+  list.forEach(v => { const o = document.createElement("option"); o.value = v.name;
+    o.textContent = v.name + (voiceScore(v) >= 25 ? " ★" : ""); if(best && v.name === best.name) o.selected = true; sel.appendChild(o); });
+}
+$("rateSel").value = rate; $("rateVal").textContent = rate.toFixed(2).replace(/0$/,"");
 
 // ---------- 5. Состояние поездки ----------
 let mode=null, pos=null, prev=null, speed=null, heading=null, lastSpokeAt=0, stoppedSince=null;
@@ -261,7 +315,7 @@ let lastFixAt = 0;
 setInterval(() => {
   if(mode!=="real" || !pos) return; const now = Date.now();
   if(now-lastFixAt > 4000){ speed = 0; stoppedSince = stoppedSince || now; $("speed").textContent = "0 км/ч"; }
-  decide(now);
+  updateMap(); decide(now);
 }, 1000);
 function onPosition(p, gpsSpeed, gpsHeading){
   const now = Date.now(); lastFixAt = now;
@@ -277,8 +331,18 @@ function onPosition(p, gpsSpeed, gpsHeading){
   decide(now);
 }
 
+// Предсказание позиции: сдвигаем последнюю точку по направлению движения на путь, пройденный за время задержки
+function predicted(){
+  if(!pos || mode!=="real" || heading==null || !speed || speed<STOP_SPEED) return pos;
+  const ahead = speed * (PREDICT_S + Math.min(5, (Date.now()-lastFixAt)/1000));
+  const R = 6371000, br = rad(heading), la = rad(pos.lat), lo = rad(pos.lon), dr = ahead/R;
+  const la2 = Math.asin(Math.sin(la)*Math.cos(dr) + Math.cos(la)*Math.sin(dr)*Math.cos(br));
+  const lo2 = lo + Math.atan2(Math.sin(br)*Math.sin(dr)*Math.cos(la), Math.cos(dr)-Math.sin(la)*Math.sin(la2));
+  return {lat: la2*180/Math.PI, lon: lo2*180/Math.PI};
+}
 function decide(now){
   if(speaking) return;
+  const here = predicted();
   // 1) ждём остановки после короткой истории
   if(offer){
     if(stoppedSince && now-stoppedSince >= STOP_HOLD_S*1000){ tellLong(offer.place); return; }
@@ -287,16 +351,16 @@ function decide(now){
   }
   if(now-lastSpokeAt < PAUSE_S*1000) return;
   // 2) ищем место впереди
-  const lead = Math.min(160, Math.max(60, 40 + (speed||0)*LEAD_S));
+  const lead = Math.min(220, Math.max(60, 40 + (speed||0)*LEAD_S));
   let best=null;
   for(const pl of allPlaces()){
     if(toldShort.has(pl.id)) continue;
-    const d = distanceM(pos, pl), near = pl.radius || NEAR_M;
-    const ahead = heading!=null && d<=lead && angleDiff(bearing(pos,pl), heading)<=AHEAD_DEG;
+    const d = distanceM(here, pl), near = pl.radius || NEAR_M;
+    const ahead = heading!=null && d<=lead && angleDiff(bearing(here,pl), heading)<=AHEAD_DEG;
     if((d<=near || ahead) && (!best || d<best.d)) best={pl,d};
   }
   if(best){ tellShort(best.pl); return; }
-  const next = allPlaces().filter(pl=>!toldShort.has(pl.id)).map(pl=>({pl,d:distanceM(pos,pl)})).sort((a,b)=>a.d-b.d)[0];
+  const next = allPlaces().filter(pl=>!toldShort.has(pl.id)).map(pl=>({pl,d:distanceM(here,pl)})).sort((a,b)=>a.d-b.d)[0];
   $("statusText").textContent = next ? `Едем. До «${next.pl.name}» ${fmtDist(next.d)}` : "Едем. Новых мест рядом нет";
   if(mode==="real") maybeAskWikipedia(pos);
 }
@@ -305,7 +369,7 @@ const fmtDist = d => d<1000 ? `${Math.round(d/10)*10} м` : `${(d/1000).toFixed(
 function tellShort(pl){
   toldShort.add(pl.id); current=pl;
   $("storyEyebrow").textContent = pl.source==="wiki" ? "Из Википедии · рядом" : "Вы проезжаете";
-  $("storyTitle").textContent = pl.name;
+  $("storyTitle").textContent = pl.name; $("darkTitle").textContent = pl.name;
   $("storyShort").textContent = pl.short; $("storyShort").classList.remove("empty");
   $("storyLong").hidden = true; $("storyOffer").hidden = true;
   $("btnMore").disabled = !pl.long;
@@ -377,7 +441,7 @@ function updateMap(){
     else layers[p.id].setStyle(style).setRadius(style.radius);
   });
   if(pos){
-    const ll=[pos.lat,pos.lon];
+    const pp = predicted(), ll=[pp.lat,pp.lon];
     if(!userMarker) userMarker = L.circleMarker(ll,{radius:8,color:css("--surface"),weight:3,fillColor:css("--ok"),fillOpacity:1}).addTo(map);
     else userMarker.setLatLng(ll);
     if(mode==="real" && Date.now()-userDraggedAt>15000) map.panTo(ll, {animate:true});
@@ -438,18 +502,25 @@ function stopRide(){
   clearInterval(demo.timer); demo.timer=null;
   if(voiceOK) speechSynthesis.cancel(); speaking=false; mode=null;
   try{ wakeLock && wakeLock.release(); }catch(e){}
-  $("ride").hidden=true; $("start").hidden=false; $("modeChip").textContent="прототип v0.2.1";
+  $("ride").hidden=true; $("start").hidden=false; $("modeChip").textContent="прототип v0.3";
 }
 
 // ---------- 9. Кнопки ----------
 $("btnStart").onclick = startReal;
 $("btnDemoLefort").onclick = () => startDemo("lefort");
 $("btnDemoCenter").onclick = () => startDemo("center");
-$("btnStop").onclick = stopRide;
+$("btnStop").onclick = () => { $("dark").hidden = true; stopRide(); };
+$("btnDark").onclick = () => { $("dark").hidden = false; };
+$("dark").onclick = () => { $("dark").hidden = true; };
+$("dark").onkeydown = e => { if(e.key==="Enter"||e.key===" "||e.key==="Escape") $("dark").hidden = true; };
 $("btnMore").onclick = () => { if(current && current.long && !speaking) tellLong(current); };
 $("btnRepeat").onclick = () => { if(current && !speaking) speak(toldLong.has(current.id) ? current.short+" "+current.long : current.short); };
 $("btnMute").onclick = () => { muted=!muted; $("btnMute").textContent = muted?"Со звуком":"Без звука"; if(muted&&voiceOK) speechSynthesis.cancel(); };
-if(!voiceOK) $("startNote").textContent="Этот браузер не умеет читать вслух, истории будут только текстом.";
+if(!voiceOK){ $("startNote").textContent="Этот браузер не умеет читать вслух, истории будут только текстом."; $("voiceBox").hidden = true; }
+else { fillVoices(); speechSynthesis.onvoiceschanged = fillVoices; }
+$("voiceSel").onchange = e => { voiceName = e.target.value; try{ localStorage.setItem("voice", voiceName); }catch(err){} };
+$("rateSel").oninput = e => { rate = parseFloat(e.target.value); $("rateVal").textContent = rate.toFixed(2).replace(/0$/,""); try{ localStorage.setItem("rate", rate); }catch(err){} };
+$("btnTest").onclick = () => { if(!speaking) speak("Слева дом Нирнзее, первый московский небоскрёб. Если хотите подробнее, остановитесь, когда будет безопасно."); };
 </script>
 
 </body>
